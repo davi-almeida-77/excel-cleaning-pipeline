@@ -111,6 +111,12 @@ def fill_totals(df):
 
     return df
 
+def clean_customer(df):
+    df["customer"] = df["customer"].str.strip().str.title()
+    df["customer"] = df["customer"].replace(["Null", "Customer", "N/a"], pd.NA)
+
+    return df
+
 
 df = df[df["order"].str.startswith("ORD-", na=False)]
 
@@ -133,6 +139,7 @@ for col, parser in PARSERS.items():
     df = apply_parser(df, col, parser)
 
 df = fill_totals(df)
+df = clean_customer(df)
 
 def parse_report(df, columns, n=20):
     cols = ["order"] + [c for col in columns for c in (f"{col}_raw", col)]
