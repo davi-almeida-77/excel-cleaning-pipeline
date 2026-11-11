@@ -111,6 +111,9 @@ def fill_totals(df):
 
     return df
 
+
+df = df[df["order"].str.startswith("ORD-", na=False)]
+
 def apply_parser(df, column, parser):
 
     df[f"{column}_raw"] = df[column]
