@@ -2,6 +2,10 @@ import pandas as pd
 from pathlib import Path
 import numpy as np
 
+pd.set_option("display.max_rows", None)
+pd.set_option("display.max_columns", None)
+pd.set_option("display.width", 200)
+
 BASE = Path(__file__).resolve().parent
 
 RAW = BASE / "data" / "raw"
@@ -73,7 +77,6 @@ def parse_number(raw):
         return float(s), error
     except ValueError:
         return float("nan"), "not a number"
-
     
 def parse_date(raw):
 
@@ -96,20 +99,21 @@ def parse_date(raw):
 
     return pd.NaT, "unrecognized format"
 
-def apply_parser(df, column, parser):
-
-    df[f"{column}_raw"] = df[column]
-    df[[column, f"{column}_error"]] = df[column].apply(parser).tolist()
-    return df
-
 def fill_totals(df):
-    df["total_source"] = "original"
+    df["total_source"] = "empty"
 
     missing_total = df["total"].isna() & df["unit_price"].notna()
     df.loc[missing_total, "total"] = df["quantity"] * df["unit_price"]
     df.loc[missing_total, "total_source"] = "calculated"
 
     return df
+
+def apply_parser(df, column, parser):
+
+    df[f"{column}_raw"] = df[column]
+    df[[column, f"{column}_error"]] = df[column].apply(parser).tolist()
+    return df
+
 
 PARSERS = {
     "date": parse_date,
@@ -136,12 +140,5 @@ def parse_report(df, columns, n=20):
     print(summary)
 
 
-parse_report(df, PARSERS)
-print(df[["order", "quantity", "unit_price", "total", "total_source"]].head(20))
 
-
-pd.set_option("display.max_rows", None)
-pd.set_option("display.max_columns", None)
-pd.set_option("display.width", 200)
-
-print(parse_report(df, PARSERS))
+print(df[["order", "customer", "product", "quantity", "unit_price", "total", "total_source"]])
