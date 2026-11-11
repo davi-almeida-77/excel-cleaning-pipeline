@@ -1,6 +1,7 @@
 import pandas as pd
 from pathlib import Path
 import numpy as np
+import re
 
 pd.set_option("display.max_rows", None)
 pd.set_option("display.max_columns", None)
@@ -49,7 +50,8 @@ def parse_number(raw):
         return float("nan"), "empty"
 
 
-    s = s.replace("R$", "").replace("$", "").replace(" ", "")
+    s = re.sub(r"[^0-9.,]", "", s)
+
     error = None
     
     last_comma = s.rfind(",")
@@ -74,6 +76,7 @@ def parse_number(raw):
             error = "ambiguous"
 
     try:
+        value = float(s)
         return float(s), error
     except ValueError:
         return float("nan"), "not a number"
@@ -100,9 +103,9 @@ def parse_date(raw):
     return pd.NaT, "unrecognized format"
 
 def fill_totals(df):
-    df["total_source"] = "empty"
+    df["total_source"] = "original"
 
-    missing_total = df["total"].isna() & df["unit_price"].notna()
+    missing_total = (df["total_error"] == "empty") & df["unit_price"].notna() & df["quantity"].notna()
     df.loc[missing_total, "total"] = df["quantity"] * df["unit_price"]
     df.loc[missing_total, "total_source"] = "calculated"
 
@@ -136,9 +139,9 @@ def parse_report(df, columns, n=20):
         "ok": [df[f"{c}_error"].isna().sum() for c in columns],
         "errors": [df[f"{c}_error"].notna().sum() for c in columns],
     }, index=columns)
-    print("\n=== Summary ===")
+    print("\n  Summary " )
     print(summary)
 
 
 
-print(df[["order", "customer", "product", "quantity", "unit_price", "total", "total_source"]])
+print(df[["order", "date", "customer", "product", "quantity", "unit_price", "total", "total_source"]])
