@@ -118,6 +118,16 @@ def clean_customer(df):
 
     return df
 
+def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
+  
+    df = df.copy()
+    df.columns = (
+        df.columns.str.strip()
+        .str.lower()
+        .str.replace(r"\s+", "_", regex=True)
+    )
+    return df
+
 
 df = df[df["order"].str.startswith("ORD-", na=False)]
 
