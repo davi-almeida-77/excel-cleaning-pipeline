@@ -12,12 +12,10 @@ pd.set_option("display.width", 200)
 BASE = Path(__file__).resolve().parent
 
 RAW = BASE / "data" / "raw"
+PROCESSED = BASE / "data" / "processed"
+TEST = BASE / "data" / "test"
 
-df = pd.read_excel(RAW / "sales_january_2026.xlsx", header=5)
-
-df_before = df.copy()
-
-canonical_map = {
+JANUARY_MAP = {
     "Order": "order",
     "Date": "date",
     "Customer": "customer",
@@ -25,6 +23,23 @@ canonical_map = {
     "Qty": "quantity",
     "Unit Price": "unit_price",
     "Total": "total",    
+}
+
+FEBRUARY_MAP = {
+    "???": "order",
+    "???": "date",
+    "???": "customer",
+    "???": "product_code",
+    "???": "product_name",
+    "???": "quantity",
+    "???": "unit_price",
+    "???": "total",
+    "???": "sales_rep",
+}
+
+DERIVED_FROM = {
+    "product_code": "product",
+    "product_name": "product",
 }
 
 FORMATS = [
@@ -36,7 +51,6 @@ FORMATS = [
 ]
 
 
-df = df.rename(columns=canonical_map)
 
 def parse_number(raw):
 
@@ -130,8 +144,6 @@ def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-df = df[df["order"].str.startswith("ORD-", na=False)]
-
 def apply_parser(df, column, parser):
 
     df[f"{column}_raw"] = df[column]
@@ -147,16 +159,7 @@ PARSERS = {
 }
 
 
-for col, parser in PARSERS.items():
-    df = apply_parser(df, col, parser)
-
-df = fill_totals(df)
-df = clean_customer(df)
-df = normalize_columns(df)
-
-
-CLEAN_COLUMNS = ["order", "date", "customer", "product", "quantity", "unit_price", "total"]
-PROCESSED = BASE / "data" / "processed"
+CLEAN_COLUMNS = ["order", "date", "customer", "product_code", "product_name", "quantity", "unit_price", "total"]
 
 CHANGED_FILL = PatternFill("solid", start_color="FFF2CC")
 CALCULATED_FILL = PatternFill("solid", start_color="DDEBF7")
@@ -191,13 +194,21 @@ def same_value(original, cleaned):
     return str(original) == str(cleaned)
 
 
-def find_changes(df, df_before):
-    before = df_before.rename(columns=canonical_map)
+def source_column(col, columns):
+    if col in columns:
+        return col
+    source = DERIVED_FROM.get(col)
+    return source if source in columns else None
+
+
+def find_changes(df, df_before, column_map):
+    before = df_before.rename(columns=column_map)
     changes = []
 
     for idx, row in df.iterrows():
         for col in CLEAN_COLUMNS:
-            original = before.at[idx, col]
+            source = source_column(col, before.columns)
+            original = before.at[idx, source] if source else pd.NA
             cleaned = row[col]
             error = row.get(f"{col}_error")
             if col == "total" and row["total_source"] == "calculated":
@@ -221,11 +232,11 @@ def find_changes(df, df_before):
     return pd.DataFrame(changes, columns=["row", "order", "column", "original", "cleaned", "status", "error"])
 
 
-def export_report(df, df_before, path):
+def export_report(df, df_before, column_map, path):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    changes = find_changes(df, df_before)
+    changes = find_changes(df, df_before, column_map)
     dropped = df_before.index.difference(df.index)
 
     summary = pd.DataFrame({
@@ -252,13 +263,15 @@ def export_report(df, df_before, path):
 
         original_row = {idx: pos + 2 for pos, idx in enumerate(df_before.index)}
         cleaned_row = {idx: pos + 2 for pos, idx in enumerate(df.index)}
-        original_col = {canonical_map.get(c, c): i + 1 for i, c in enumerate(df_before.columns)}
+        original_col = {column_map.get(c, c): i + 1 for i, c in enumerate(df_before.columns)}
         cleaned_col = {c: i + 1 for i, c in enumerate(CLEAN_COLUMNS)}
 
         for change in changes.itertuples():
             fill = fills[change.status]
             cleaned_ws.cell(cleaned_row[change.row], cleaned_col[change.column]).fill = fill
-            original_ws.cell(original_row[change.row], original_col[change.column]).fill = fill
+            source = source_column(change.column, original_col)
+            if source:
+                original_ws.cell(original_row[change.row], original_col[source]).fill = fill
 
         for idx in dropped:
             for cell in original_ws[original_row[idx]]:
@@ -294,7 +307,39 @@ def autofit(ws):
         ws.column_dimensions[get_column_letter(column[0].column)].width = min(width + 2, 50)
 
 
-print(df[["order", "date", "customer", "product", "quantity", "unit_price", "total", "total_source"]])
+def split_product(df):
+    df[['product_code', 'product_name']] = df['product'].str.split(' - ', n=1, expand=True)
+    df = df.drop(columns="product")
 
-export_clean(df, PROCESSED / "sales_january_2026_clean.xlsx")
-export_report(df, df_before, PROCESSED / "sales_january_2026_report.xlsx")
+    return df
+
+def run(filename, column_map, line_spreadsheet):
+    df = pd.read_excel(RAW / filename, header=line_spreadsheet)
+
+    df_before = df.copy()
+
+    df = df.rename(columns=column_map)
+
+    df = df[df["order"].str.startswith("ORD-", na=False)].copy()
+
+    df = clean_customer(df)
+
+    if "product" in df.columns:
+        df = split_product(df)
+
+    for col, parser in PARSERS.items():
+        df = apply_parser(df, col, parser)
+
+    df = fill_totals(df)
+
+    print(f"\n=== {filename} ===")
+    print(df[CLEAN_COLUMNS + ["total_source"]])
+
+    stem = Path(filename).stem
+    export_clean(df, TEST / f"{stem}_clean.xlsx")
+    export_report(df, df_before, column_map, TEST / f"{stem}_report.xlsx")
+
+
+if __name__ == "__main__":
+    run("sales_january_2026.xlsx", JANUARY_MAP, line_spreadsheet=5)
+    # run("sales_february_2026.xlsx", FEBRUARY_MAP, line_spreadsheet=0)
