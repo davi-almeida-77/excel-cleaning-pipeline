@@ -1,6 +1,5 @@
 import pandas as pd
 from pathlib import Path
-import numpy as np
 import re
 from datetime import datetime
 from openpyxl.styles import Font, PatternFill
@@ -80,7 +79,6 @@ def parse_number(raw):
             error = "ambiguous"
 
     try:
-        value = float(s)
         return float(s), error
     except ValueError:
         return float("nan"), "not a number"
@@ -154,17 +152,7 @@ for col, parser in PARSERS.items():
 
 df = fill_totals(df)
 df = clean_customer(df)
-
-def parse_report(df, columns, n=20):
-    cols = ["order"] + [c for col in columns for c in (f"{col}_raw", col)]
-    print(df[cols].head(n))
-
-    summary = pd.DataFrame({
-        "ok": [df[f"{c}_error"].isna().sum() for c in columns],
-        "errors": [df[f"{c}_error"].notna().sum() for c in columns],
-    }, index=columns)
-    print("\n  Summary " )
-    print(summary)
+df = normalize_columns(df)
 
 
 CLEAN_COLUMNS = ["order", "date", "customer", "product", "quantity", "unit_price", "total"]
